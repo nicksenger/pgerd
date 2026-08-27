@@ -230,22 +230,31 @@ impl Erd {
     /// Estimated node size in layout units (used before measurement refines it).
     pub fn node_size(&self, node: u32) -> (f64, f64) {
         let table = &self.tables[node as usize];
+        let collapsed = self.collapsed[node as usize];
         // Reserve room for the header's toggle button next to the name.
         let name_width =
             est_text_width(&self.display_names[node as usize], HEADER_FONT) + TOGGLE_SPACE;
 
         let mut content_width = name_width;
-        for column in &table.columns {
-            let width = INDICATOR_W
-                + INDICATOR_GAP
-                + est_text_width(&column.name, BODY_FONT)
-                + NAME_TYPE_GAP
-                + est_text_width(&column.data_type, TYPE_FONT);
-            content_width = content_width.max(width);
+        if !collapsed {
+            for column in &table.columns {
+                let width = INDICATOR_W
+                    + INDICATOR_GAP
+                    + est_text_width(&column.name, BODY_FONT)
+                    + NAME_TYPE_GAP
+                    + est_text_width(&column.data_type, TYPE_FONT);
+                content_width = content_width.max(width);
+            }
         }
 
-        let width = (content_width + H_PADDING * 2.0).max(150.0);
-        let height = if self.collapsed[node as usize] {
+        // Collapsed nodes shrink to just the header (name + toggle button);
+        // expanded nodes keep a minimum width so sparse tables don't look broken.
+        let width = if collapsed {
+            content_width + H_PADDING * 2.0
+        } else {
+            (content_width + H_PADDING * 2.0).max(150.0)
+        };
+        let height = if collapsed {
             HEADER_H
         } else {
             HEADER_H + table.columns.len() as f64 * ROW_H + 8.0
@@ -259,8 +268,9 @@ impl Erd {
         let name = self.display_names[node as usize].clone();
         let collapsed = self.collapsed[node as usize];
         // A deterministic width keeps the `Fill` rows below well-defined and
-        // matches the size the graph layout is computed with.
-        let width = self.node_size(node).0.max(150.0) as f32;
+        // matches the size the graph layout is computed with (collapsed nodes
+        // shrink to just their header).
+        let width = self.node_size(node).0 as f32;
         let hovered = self.hovered_node == Some(node);
 
         // Toggle button: a simple "-" while expanded, a 45° double-headed
