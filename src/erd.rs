@@ -82,7 +82,7 @@ fn edge_color() -> Color {
     Color::from_rgb8(150, 162, 178) // light, readable on dark bg
 }
 fn dimmed_edge_alpha() -> f32 {
-    0.15
+    0.6
 }
 fn hover_border() -> Color {
     Color::from_rgb8(196, 212, 228) // brightened table border while hovered
