@@ -7,7 +7,7 @@
 //! already in the transformed pan/zoom coordinate space).
 
 use iced::advanced::widget::tree;
-use iced::advanced::{layout, mouse, renderer, Clipboard, Layout, Shell, Widget};
+use iced::advanced::{Clipboard, Layout, Shell, Widget, layout, mouse, renderer};
 use iced::{Element, Event, Length, Rectangle, Size};
 
 /// Wraps an element and emits `on_enter`/`on_leave` messages when the cursor

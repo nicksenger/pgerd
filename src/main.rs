@@ -10,8 +10,8 @@ mod db;
 mod erd;
 mod hover;
 
-use iced::widget::{text, Column, Container};
-use iced::{keyboard, Alignment, Color, Element, Length, Task};
+use iced::widget::{Column, Container, text};
+use iced::{Alignment, Color, Element, Length, Task, keyboard};
 
 use crate::db::Schema;
 use crate::erd::{Erd, SUGIYAMA_ID};

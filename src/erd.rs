@@ -4,13 +4,13 @@
 
 use std::collections::HashMap;
 
+use iced::widget::Space;
 use iced::widget::canvas::{self, Frame, Path, Stroke};
 use iced::widget::text::Wrapping;
-use iced::widget::Space;
-use iced::widget::{button, container, text, Column, Container, Row};
+use iced::widget::{Column, Container, Row, button, container, text};
 use iced::{
-    alignment, border, mouse, Background, Color, Element, Font, Length, Point, Rectangle, Shadow,
-    Vector,
+    Background, Color, Element, Font, Length, Point, Rectangle, Shadow, Vector, alignment, border,
+    mouse,
 };
 
 use iced_sugiyama::{Config, EdgeEndpointKind, Graph, OutgoingEdgeStyle, Sugiyama};
