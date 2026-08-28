@@ -6,9 +6,12 @@ use std::collections::HashMap;
 
 use iced::widget::canvas::{self, Frame, Path, Stroke};
 use iced::widget::text::Wrapping;
-use iced::widget::{button, container, text, Column, Container, Row};
 use iced::widget::Space;
-use iced::{alignment, border, mouse, Background, Color, Element, Font, Length, Point, Rectangle, Shadow, Vector};
+use iced::widget::{button, container, text, Column, Container, Row};
+use iced::{
+    alignment, border, mouse, Background, Color, Element, Font, Length, Point, Rectangle, Shadow,
+    Vector,
+};
 
 use iced_sugiyama::{Config, EdgeEndpointKind, Graph, OutgoingEdgeStyle, Sugiyama};
 
@@ -164,6 +167,7 @@ impl Erd {
 
         let config = Config {
             vertex_spacing: 40.0,
+            transpose: false,
             ..Default::default()
         };
 
@@ -276,10 +280,12 @@ impl Erd {
         // Toggle button: a simple "-" while expanded, a 45° double-headed
         // arrow while collapsed (click to expand again).
         let icon: Element<'static, crate::Message> = if collapsed {
-            canvas::Canvas::new(ExpandGlyph { color: header_text() })
-                .width(TOGGLE_GLYPH)
-                .height(TOGGLE_GLYPH)
-                .into()
+            canvas::Canvas::new(ExpandGlyph {
+                color: header_text(),
+            })
+            .width(TOGGLE_GLYPH)
+            .height(TOGGLE_GLYPH)
+            .into()
         } else {
             text("-").size(HEADER_FONT).font(Font::MONOSPACE).into()
         };
@@ -358,7 +364,9 @@ impl Erd {
             // The FK / child side is the "many" end.
             EdgeEndpointKind::Source => (Cardinality::Many, angle_radians),
             // The referenced / parent side is the "one" end.
-            EdgeEndpointKind::Destination => (Cardinality::One, angle_radians + std::f32::consts::PI),
+            EdgeEndpointKind::Destination => {
+                (Cardinality::One, angle_radians + std::f32::consts::PI)
+            }
         };
 
         let glyph = CrowFootGlyph {
@@ -432,10 +440,14 @@ fn column_row(column: &DbColumn, striped: bool) -> Element<'static, crate::Messa
     } else if column.is_foreign_key {
         key_square(fk_color(), false)
     } else {
-        container(Space::new().width(INDICATOR_W as f32).height(INDICATOR_W as f32))
-            .width(INDICATOR_W as f32)
-            .height(INDICATOR_W as f32)
-            .into()
+        container(
+            Space::new()
+                .width(INDICATOR_W as f32)
+                .height(INDICATOR_W as f32),
+        )
+        .width(INDICATOR_W as f32)
+        .height(INDICATOR_W as f32)
+        .into()
     };
 
     let name = text(column.name.clone())
@@ -476,11 +488,15 @@ fn key_square(color: Color, filled: bool) -> Element<'static, crate::Message> {
         s
     };
 
-    container(Space::new().width(INDICATOR_W as f32).height(INDICATOR_W as f32))
-        .width(INDICATOR_W as f32)
-        .height(INDICATOR_W as f32)
-        .style(style)
-        .into()
+    container(
+        Space::new()
+            .width(INDICATOR_W as f32)
+            .height(INDICATOR_W as f32),
+    )
+    .width(INDICATOR_W as f32)
+    .height(INDICATOR_W as f32)
+    .style(style)
+    .into()
 }
 
 /// A small pill shown at the midpoint of a relationship edge, naming the FK.
@@ -493,20 +509,22 @@ fn edge_label_pill(label: String, highlight: EdgeHighlight) -> Element<'static, 
             let dim = Color::from_rgb8(176, 188, 202).scale_alpha(dimmed_edge_alpha());
             (dim, surface_border().scale_alpha(dimmed_edge_alpha()))
         }
-        EdgeHighlight::None => (
-            Color::from_rgb8(176, 188, 202),
-            surface_border(),
-        ),
+        EdgeHighlight::None => (Color::from_rgb8(176, 188, 202), surface_border()),
     };
 
-    container(text(label).size(LABEL_FONT).font(Font::MONOSPACE).color(text_color))
-        .padding([2.0, 6.0])
-        .style(move |_: &iced::Theme| {
-            ContainerStyle::default()
-                .background(Color::from_rgba8(24, 29, 38, 0.85))
-                .border(border::rounded(5.0).width(1.0).color(border_color))
-        })
-        .into()
+    container(
+        text(label)
+            .size(LABEL_FONT)
+            .font(Font::MONOSPACE)
+            .color(text_color),
+    )
+    .padding([2.0, 6.0])
+    .style(move |_: &iced::Theme| {
+        ContainerStyle::default()
+            .background(Color::from_rgba8(24, 29, 38, 0.85))
+            .border(border::rounded(5.0).width(1.0).color(border_color))
+    })
+    .into()
 }
 
 // --- styles ----------------------------------------------------------------
@@ -531,15 +549,13 @@ fn table_style(hovered: bool) -> ContainerStyle {
 }
 
 fn header_style() -> ContainerStyle {
-    ContainerStyle::default().background(header_bg()).color(header_text())
+    ContainerStyle::default()
+        .background(header_bg())
+        .color(header_text())
 }
 
 fn row_style(striped: bool) -> ContainerStyle {
-    ContainerStyle::default().background(if striped {
-        row_bg_odd()
-    } else {
-        row_bg_even()
-    })
+    ContainerStyle::default().background(if striped { row_bg_odd() } else { row_bg_even() })
 }
 
 // --- crow's-foot glyph ------------------------------------------------------
@@ -657,8 +673,14 @@ where
 
             // Arrowheads: two barbs sweeping back from each tip.
             for (tip, base) in [(7.0_f32, 2.5_f32), (-7.0_f32, -2.5_f32)] {
-                frame.stroke(&Path::line(Point::new(tip, 0.0), Point::new(base, 2.6)), stroke);
-                frame.stroke(&Path::line(Point::new(tip, 0.0), Point::new(base, -2.6)), stroke);
+                frame.stroke(
+                    &Path::line(Point::new(tip, 0.0), Point::new(base, 2.6)),
+                    stroke,
+                );
+                frame.stroke(
+                    &Path::line(Point::new(tip, 0.0), Point::new(base, -2.6)),
+                    stroke,
+                );
             }
         });
 
