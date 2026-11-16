@@ -14,6 +14,8 @@ pub struct Column {
     pub is_foreign_key: bool,
     /// True when this foreign key references the column's own table.
     pub is_self_foreign_key: bool,
+    /// True when the column accepts NULL (i.e. it is not `NOT NULL`).
+    pub is_nullable: bool,
 }
 
 /// A base table (relation).
@@ -63,7 +65,7 @@ pub fn load(url: &str) -> Result<Schema, String> {
 
     // Columns (in declaration order) for every base table.
     let column_sql = "
-        SELECT c.table_schema, c.table_name, c.column_name, c.data_type
+        SELECT c.table_schema, c.table_name, c.column_name, c.data_type, c.is_nullable
         FROM information_schema.columns c
         JOIN information_schema.tables t
           ON t.table_schema = c.table_schema
@@ -109,6 +111,7 @@ pub fn load(url: &str) -> Result<Schema, String> {
         let name: String = row.get(1);
         let column_name: String = row.get(2);
         let data_type: String = row.get(3);
+        let is_nullable: String = row.get(4);
 
         let key = (schema.clone(), name.clone());
         let position = match table_index.get(&key).copied() {
@@ -130,6 +133,8 @@ pub fn load(url: &str) -> Result<Schema, String> {
             is_primary_key: false,
             is_foreign_key: false,
             is_self_foreign_key: false,
+            // information_schema reports 'YES' / 'NO'.
+            is_nullable: is_nullable == "YES",
         });
     }
 
@@ -194,51 +199,89 @@ fn mark_column(table: &mut Table, column_name: &str, set: impl Fn(&mut Column)) 
 /// A small hard-coded schema used by the `debug` pseudo-URL to preview the
 /// node widgets without a database.
 pub fn sample() -> Schema {
-    fn col(name: &str, ty: &str, pk: bool, fk: bool, self_fk: bool) -> Column {
+    /// What a sample column stands for; it decides which indicator glyph the
+    /// column renders.
+    enum Role {
+        /// Required primary key.
+        Pk,
+        /// Foreign key to another table, required or nullable.
+        Fk { required: bool },
+        /// Foreign key into the column's own table.
+        SelfFk { required: bool },
+        /// Required column that is not a key.
+        Required,
+        /// Nullable column that is not a key.
+        Nullable,
+    }
+
+    fn col(name: &str, ty: &str, role: Role) -> Column {
+        let (is_primary_key, is_foreign_key, is_self_foreign_key, is_nullable) = match role {
+            Role::Pk => (true, false, false, false),
+            Role::Fk { required } => (false, true, false, !required),
+            Role::SelfFk { required } => (false, true, true, !required),
+            Role::Required => (false, false, false, false),
+            Role::Nullable => (false, false, false, true),
+        };
         Column {
             name: name.into(),
             data_type: ty.into(),
-            is_primary_key: pk,
-            is_foreign_key: fk,
-            is_self_foreign_key: self_fk,
+            is_primary_key,
+            is_foreign_key,
+            is_self_foreign_key,
+            is_nullable,
         }
     }
+
+    use Role::*;
 
     let tables = vec![
         Table {
             schema: "public".into(),
             name: "users".into(),
             columns: vec![
-                col("id", "integer", true, false, false),
-                col("name", "text", false, false, false),
-                col("email", "text", false, false, false),
+                col("id", "integer", Pk),
+                col("name", "text", Required),
+                col("email", "text", Required),
+                col("bio", "text", Nullable),
             ],
         },
         Table {
             schema: "public".into(),
             name: "posts".into(),
             columns: vec![
-                col("id", "integer", true, false, false),
-                col("user_id", "integer", false, true, false),
-                col("title", "text", false, false, false),
+                col("id", "integer", Pk),
+                col("user_id", "integer", Fk { required: true }),
+                col("title", "text", Required),
+                col("subtitle", "text", Nullable),
             ],
         },
         Table {
             schema: "public".into(),
             name: "comments".into(),
             columns: vec![
-                col("id", "integer", true, false, false),
-                col("post_id", "integer", false, true, false),
-                col("user_id", "integer", false, true, false),
+                col("id", "integer", Pk),
+                col("post_id", "integer", Fk { required: true }),
+                col("user_id", "integer", Fk { required: true }),
+                col("body", "text", Nullable),
+            ],
+        },
+        Table {
+            schema: "public".into(),
+            name: "reviews".into(),
+            columns: vec![
+                col("id", "integer", Pk),
+                col("post_id", "integer", Fk { required: false }),
+                col("reviewer_id", "integer", Fk { required: true }),
+                col("stars", "integer", Required),
             ],
         },
         Table {
             schema: "public".into(),
             name: "categories".into(),
             columns: vec![
-                col("id", "integer", true, false, false),
-                col("parent_id", "integer", false, true, true),
-                col("name", "text", false, false, false),
+                col("id", "integer", Pk),
+                col("parent_id", "integer", SelfFk { required: false }),
+                col("name", "text", Required),
             ],
         },
     ];
@@ -264,6 +307,20 @@ pub fn sample() -> Schema {
             to_schema: "public".into(),
             to_table: "users".into(),
             from_columns: vec!["user_id".into()],
+        },
+        ForeignKey {
+            from_schema: "public".into(),
+            from_table: "reviews".into(),
+            to_schema: "public".into(),
+            to_table: "posts".into(),
+            from_columns: vec!["post_id".into()],
+        },
+        ForeignKey {
+            from_schema: "public".into(),
+            from_table: "reviews".into(),
+            to_schema: "public".into(),
+            to_table: "users".into(),
+            from_columns: vec!["reviewer_id".into()],
         },
         ForeignKey {
             from_schema: "public".into(),

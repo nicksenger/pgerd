@@ -9,8 +9,8 @@ use iced::widget::canvas::{self, Frame, Path, Stroke};
 use iced::widget::text::Wrapping;
 use iced::widget::{Column, Container, Row, button, container, text};
 use iced::{
-    Background, Color, Element, Font, Length, Point, Rectangle, Shadow, Vector, alignment, border,
-    mouse,
+    Background, Color, Element, Font, Length, Point, Rectangle, Shadow, Size, Vector, alignment,
+    border, mouse,
 };
 
 use iced_sugiyama::{Config, EdgeEndpointKind, Graph, OutgoingEdgeStyle, Sugiyama};
@@ -59,17 +59,20 @@ fn row_bg_odd() -> Color {
     Color::from_rgb8(35, 42, 53) // subtle stripe
 }
 fn pk_color() -> Color {
-    Color::from_rgb8(126, 200, 148) // green key
+    Color::from_rgb8(126, 200, 148) // green: the referenced ("one") side of an edge
 }
 fn fk_color() -> Color {
-    Color::from_rgb8(126, 176, 226) // blue foreign key
+    Color::from_rgb8(126, 176, 226) // blue: keys (primary and foreign)
 }
 fn self_fk_color() -> Color {
     Color::from_rgb8(167, 139, 250) // purple self-referencing foreign key
 }
+fn required_color() -> Color {
+    Color::from_rgb8(226, 182, 116) // amber: NOT NULL marker
+}
 fn col_name_color(is_pk: bool, is_fk: bool, is_self_fk: bool) -> Color {
     if is_pk {
-        pk_color()
+        fk_color()
     } else if is_self_fk {
         self_fk_color()
     } else if is_fk {
@@ -433,22 +436,7 @@ fn est_text_width(s: &str, font_size: f32) -> f64 {
 
 /// One column row inside a table node.
 fn column_row(column: &DbColumn, striped: bool) -> Element<'static, crate::Message> {
-    let indicator = if column.is_primary_key {
-        key_square(pk_color(), true)
-    } else if column.is_self_foreign_key {
-        key_square(self_fk_color(), false)
-    } else if column.is_foreign_key {
-        key_square(fk_color(), false)
-    } else {
-        container(
-            Space::new()
-                .width(INDICATOR_W as f32)
-                .height(INDICATOR_W as f32),
-        )
-        .width(INDICATOR_W as f32)
-        .height(INDICATOR_W as f32)
-        .into()
-    };
+    let indicator = indicator_element(column);
 
     let name = text(column.name.clone())
         .size(BODY_FONT)
@@ -476,27 +464,127 @@ fn column_row(column: &DbColumn, striped: bool) -> Element<'static, crate::Messa
         .into()
 }
 
-/// A small rounded indicator: filled for primary keys, hollow for foreign keys.
-fn key_square(color: Color, filled: bool) -> Element<'static, crate::Message> {
-    let style = move |_: &iced::Theme| {
-        let mut s = ContainerStyle::default();
-        if filled {
-            s.background = Some(color.into());
-        } else {
-            s.border = border::rounded(3.0).width(1.5).color(color);
-        }
-        s
+/// The glyph in front of a column name, or `None` for a plain nullable column.
+#[derive(Debug, Clone, Copy)]
+enum Indicator {
+    /// Solid triangle: primary key (a primary key is always required).
+    PrimaryKey,
+    /// Square: foreign key — solid when required, hollow when nullable.
+    ForeignKey { required: bool },
+    /// Solid dot: a required column that is not a key.
+    Required,
+}
+
+/// The indicator a column deserves, following the shape rules above.
+fn column_indicator(column: &DbColumn) -> Option<Indicator> {
+    if column.is_primary_key {
+        Some(Indicator::PrimaryKey)
+    } else if column.is_foreign_key {
+        Some(Indicator::ForeignKey {
+            required: !column.is_nullable,
+        })
+    } else if !column.is_nullable {
+        Some(Indicator::Required)
+    } else {
+        None
+    }
+}
+
+/// The indicator widget itself: a canvas glyph, or bare space when there is
+/// none (nullable, non-key columns get no icon at all).
+fn indicator_element(column: &DbColumn) -> Element<'static, crate::Message> {
+    let Some(indicator) = column_indicator(column) else {
+        return Space::new()
+            .width(INDICATOR_W as f32)
+            .height(INDICATOR_W as f32)
+            .into();
     };
 
-    container(
-        Space::new()
-            .width(INDICATOR_W as f32)
-            .height(INDICATOR_W as f32),
-    )
-    .width(INDICATOR_W as f32)
-    .height(INDICATOR_W as f32)
-    .style(style)
-    .into()
+    let color = match indicator {
+        Indicator::PrimaryKey => fk_color(),
+        // Self-references keep their purple, whatever the shape.
+        Indicator::ForeignKey { .. } if column.is_self_foreign_key => self_fk_color(),
+        Indicator::ForeignKey { .. } => fk_color(),
+        Indicator::Required => required_color(),
+    };
+
+    canvas::Canvas::new(IndicatorGlyph { indicator, color })
+        .width(INDICATOR_W as f32)
+        .height(INDICATOR_W as f32)
+        .into()
+}
+
+/// Side length of a filled indicator glyph.
+const INDICATOR_SIDE: f32 = 11.0;
+/// Side length of a hollow square, shrunk so its stroke stays inside the cell.
+const HOLLOW_SIDE: f32 = 10.0;
+/// Stroke width of a hollow square.
+const HOLLOW_WIDTH: f32 = 1.5;
+/// Radius of the required-column dot.
+const DOT_RADIUS: f32 = 3.0;
+
+#[derive(Debug, Clone, Copy)]
+struct IndicatorGlyph {
+    indicator: Indicator,
+    color: Color,
+}
+
+impl<Message, Theme, Renderer> canvas::Program<Message, Theme, Renderer> for IndicatorGlyph
+where
+    Renderer: iced::advanced::graphics::geometry::Renderer,
+{
+    type State = ();
+
+    fn draw(
+        &self,
+        _state: &Self::State,
+        renderer: &Renderer,
+        _theme: &Theme,
+        bounds: Rectangle,
+        _cursor: mouse::Cursor,
+    ) -> Vec<canvas::Geometry<Renderer>> {
+        let mut frame = Frame::new(renderer, bounds.size());
+        let center = frame.center();
+
+        match self.indicator {
+            Indicator::PrimaryKey => {
+                // Upward triangle, bounding box centred in the cell.
+                let half = INDICATOR_SIDE / 2.0;
+                let triangle = Path::new(|path| {
+                    path.move_to(Point::new(center.x, center.y - half));
+                    path.line_to(Point::new(center.x - half, center.y + half));
+                    path.line_to(Point::new(center.x + half, center.y + half));
+                    path.close();
+                });
+                frame.fill(&triangle, self.color);
+            }
+            Indicator::ForeignKey { required } => {
+                let side = if required {
+                    INDICATOR_SIDE
+                } else {
+                    HOLLOW_SIDE
+                };
+                let top_left = Point::new(center.x - side / 2.0, center.y - side / 2.0);
+                let square =
+                    Path::rounded_rectangle(top_left, Size::new(side, side), border::radius(3.0));
+                if required {
+                    frame.fill(&square, self.color);
+                } else {
+                    frame.stroke(
+                        &square,
+                        Stroke::default()
+                            .with_color(self.color)
+                            .with_width(HOLLOW_WIDTH),
+                    );
+                }
+            }
+            Indicator::Required => {
+                frame.fill(&Path::circle(center, DOT_RADIUS), self.color);
+            }
+        }
+
+        vec![frame.into_geometry()]
+    }
 }
 
 /// A small pill shown at the midpoint of a relationship edge, naming the FK.
